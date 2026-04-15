@@ -1,0 +1,11 @@
+# B站 Cookie 配置文件
+#
+# 获取方式：
+# 1. 在浏览器中登录B站 https://www.bilibili.com
+# 2. 打开开发者工具 (F12) -> Network (网络)
+# 3. 刷新页面，找到任意请求
+# 4. 复制请求头中的 Cookie 值
+# 5. 将 Cookie 粘贴到下面（删除这行注释）
+#
+# 示例格式（请替换为实际值）：
+# cookie_name=cookie_value; another_name=another_value
