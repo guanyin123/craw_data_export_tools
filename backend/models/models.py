@@ -69,6 +69,7 @@ class Keyword(Base):
 
     __table_args__ = (
         Index("idx_count", "count"),
+        Index("idx_category_count", "category", "count"),  # 分类筛选+排序优化
         CheckConstraint("count >= 0", name="check_count_non_negative"),
     )
 
@@ -124,6 +125,8 @@ class KeywordItem(Base):
     item: Mapped["Item"] = relationship(back_populates="keyword_items")
 
     __table_args__ = (
+        Index("idx_keyword_item_keyword", "keyword_id"),
+        Index("idx_keyword_item_item", "item_id"),
         CheckConstraint("score IS NULL OR score >= 0", name="check_keyword_item_score_non_negative"),
     )
 

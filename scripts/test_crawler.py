@@ -8,10 +8,14 @@
     python scripts/test_crawler.py --no-save # 不保存到数据库
 """
 import asyncio
+import logging
 import sys
 import argparse
 from pathlib import Path
 from datetime import datetime
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 添加 backend 目录到 Python 路径
 backend_dir = Path(__file__).parent.parent / "backend"
