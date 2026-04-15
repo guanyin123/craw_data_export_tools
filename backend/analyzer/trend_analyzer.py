@@ -201,7 +201,8 @@ class TrendAnalyzer:
             previous_count = previous_data["count"]
 
             if previous_count == 0:
-                growth_rate = float('inf') if current_count > 0 else 0
+                # 使用一个大的有限值代替无穷大，便于 JSON 序列化
+                growth_rate = 999.0 if current_count > 0 else 0
             else:
                 growth_rate = (current_count - previous_count) / previous_count
 

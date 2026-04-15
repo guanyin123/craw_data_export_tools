@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python3 -c ':*)",
-      "Bash(curl -s http://localhost:8000/api/keywords/stats)"
+      "Bash(curl -s http://localhost:8000/api/keywords/stats)",
+      "Bash(d:/developer/craw_data_export_tools/backend/venv/Scripts/python.exe -c ' *)"
     ]
   }
 }

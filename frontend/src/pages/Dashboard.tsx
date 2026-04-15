@@ -68,19 +68,6 @@ export default function Dashboard() {
     handleCategoryChange(normalizedCategory)
   }, [handleCategoryChange])
 
-  // 根据选中的分类筛选关键词
-  const filteredKeywords = useMemo(() => {
-    if (!selectedCategory) return keywords
-    return keywords.filter(k => {
-      if (!selectedCategory) return true
-      if (selectedCategory === 'OTHER') return !k.category || k.category === 'OTHER'
-      return k.category === selectedCategory
-    })
-  }, [keywords, selectedCategory])
-
-  // 计算筛选后的数量
-  const filteredCount = filteredKeywords.length
-
   // 初始化和自动刷新
   useEffect(() => {
     let mounted = true
@@ -179,6 +166,7 @@ export default function Dashboard() {
           icon={<ReloadOutlined />}
           loading={loading || crawlerLoading}
           onClick={handleRefresh}
+          aria-label="刷新数据"
         >
           刷新
         </Button>
@@ -230,6 +218,7 @@ export default function Dashboard() {
               icon={<FilterOutlined />}
               onClick={() => handleCategoryChange(null)}
               style={{ fontSize: '12px', color: '#999' }}
+              aria-label="清除分类筛选"
             >
               {selectedCategory ? '清除筛选' : '点击分类筛选'}
             </Button>
@@ -242,10 +231,21 @@ export default function Dashboard() {
             const isSelected = selectedCategory === category ||
               (selectedCategory === 'OTHER' && !category) ||
               (selectedCategory === null && false)
+            const categoryLabel = getCategoryLabel(category)
             return (
               <Col span={3} key={category}>
                 <div
                   onClick={() => handleCategoryClick(category || 'OTHER')}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`筛选 ${categoryLabel} 分类 (${count} 个关键词)`}
+                  aria-pressed={isSelected}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleCategoryClick(category || 'OTHER')
+                    }
+                  }}
                   style={{
                     cursor: 'pointer',
                     padding: '8px',
@@ -255,7 +255,7 @@ export default function Dashboard() {
                   }}
                 >
                   <Statistic
-                    title={getCategoryLabel(category)}
+                    title={categoryLabel}
                     value={count}
                     valueStyle={{
                       color: CATEGORY_COLORS[category] || '#8c8c8c',
@@ -276,7 +276,7 @@ export default function Dashboard() {
             <span>热门关键词</span>
             {selectedCategory && (
               <Tag color={CATEGORY_COLORS[selectedCategory]}>
-                {getCategoryLabel(selectedCategory)}: {filteredCount}
+                {getCategoryLabel(selectedCategory)}: {keywords.length}
               </Tag>
             )}
             <Select
@@ -292,7 +292,7 @@ export default function Dashboard() {
       >
         <Table
           columns={columns}
-          dataSource={filteredKeywords}
+          dataSource={keywords}
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 20 }}

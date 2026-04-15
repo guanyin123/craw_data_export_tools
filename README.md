@@ -52,12 +52,25 @@ craw_data_export_tools/
 
 ## 快速开始
 
+> **重要提示**: 所有后端命令都需要在虚拟环境中运行。确保命令行前缀显示 `(venv)`，如果没有请先激活虚拟环境：
+>
+> ```bash
+> # Windows
+> venv\Scripts\activate
+>
+> # Linux/Mac
+> source venv/bin/activate
+> ```
+
 ### 后端
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# 激活虚拟环境
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # Linux/Mac
+# 安装依赖
 pip install -r requirements.txt
 ```
 
@@ -67,6 +80,100 @@ pip install -r requirements.txt
 cd frontend
 npm install
 npm run dev
+```
+
+## 运行爬虫
+
+> **前提条件**: 确保后端虚拟环境已激活（命令行前缀显示 `(venv)`）
+
+### 方式1：通过 API（推荐）
+
+先启动后端服务：
+
+```bash
+cd backend
+python -m api.main
+```
+
+然后在另一个终端执行爬虫请求：
+
+```powershell
+# Windows PowerShell
+Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/crawler/run?platform=zhihu&limit=10&save=true&analyze=true" -ContentType "application/json" -body '{}'
+
+# 或使用 curl
+curl -X POST "http://localhost:8000/api/crawler/run?platform=zhihu&limit=10&save=true&analyze=true" -H "Content-Type: application/json" -d "{}"
+```
+
+**API参数说明：**
+- `platform`: 平台名称 (`zhihu` 或 `bilibili`)
+- `limit`: 抓取数量
+- `save`: 是否保存到数据库
+- `analyze`: 是否分析关键词
+
+### 方式2：直接运行脚本
+
+```bash
+cd backend
+
+# 抓取知乎热榜（默认10条）
+python run_crawler.py
+
+# 抓取更多数据
+python run_crawler.py --limit 20
+
+# 抓取B站数据
+python run_crawler.py --platform bilibili
+
+# 不保存到数据库，仅测试
+python run_crawler.py --no-save
+
+# 查看帮助
+python run_crawler.py --help
+```
+
+## 平台爬虫说明
+
+### B站爬虫
+
+B站爬虫使用第三方热榜API，**不需要配置Cookie**，可以直接运行：
+
+```bash
+# 抓取B站热门数据
+python run_crawler.py --platform bilibili
+
+# 指定抓取数量
+python run_crawler.py --platform bilibili --limit 20
+```
+
+**B站爬虫特点：**
+
+| 特性 | 说明 |
+|------|------|
+| 数据源 | 第三方热榜API（无需登录） |
+| API源 | 3个备用API，自动切换 |
+| 获取内容 | 热门视频标题、热度、UP主、简介 |
+| Cookie | **不需要** |
+
+**平台对比：**
+
+| 对比项 | 知乎 | B站 |
+|--------|------|------|
+| Cookie | 需要（推荐配置） | 不需要 |
+| 数据内容 | 热榜问题 + 高赞回答 | 热门视频信息 |
+| 热度指标 | 热度值/点赞数 | 播放量/热度值 |
+
+### 知乎爬虫
+
+知乎爬虫建议配置Cookie以获取更完整的数据：
+
+```bash
+# 复制Cookie示例文件
+cp backend/data/zhihu_cookie.txt.example backend/data/zhihu_cookie.txt
+
+# 编辑文件，填入你的知乎Cookie
+# 然后运行
+python run_crawler.py --platform zhihu
 ```
 
 ## 合规性说明

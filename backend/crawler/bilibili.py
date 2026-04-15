@@ -1,7 +1,7 @@
 """
 B站爬虫模块
 
-使用热榜API获取B站热门视频数据
+使用B站官方API获取热门视频数据
 """
 import logging
 from datetime import datetime
@@ -18,96 +18,91 @@ class BilibiliCrawler(BaseCrawler):
     """
     B站爬虫
 
-    使用第三方热榜API获取热门视频数据
+    使用B站官方API获取热门视频数据
     """
-
-    # 备选API列表
-    API_ENDPOINTS = [
-        "https://api.vvhan.com/api/hotlist/biliHot",
-        "https://hot.api0v.com/list/bilibili",
-        "https://hot.go-old.cn/api/bilibili",
-    ]
 
     def __init__(self, config: Optional[BilibiliConfig] = None):
         super().__init__(config or BilibiliConfig())
         self.config: BilibiliConfig  # type: ignore
 
+    async def init_client(self):
+        """初始化 HTTP 客户端（覆盖基类以添加自定义headers）"""
+        from .base import httpx
+
+        if self._client is None or self._client.is_closed:
+            headers = {
+                "User-Agent": self.config.user_agent,
+                "Accept": "application/json",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Referer": "https://www.bilibili.com/",
+                "Origin": "https://www.bilibili.com",
+            }
+
+            # 添加 Cookie（可选）
+            if self.config.cookie:
+                headers["Cookie"] = self.config.cookie
+                logger.info(f"{self.__class__.__name__}: 使用已配置的 Cookie")
+            else:
+                logger.info(f"{self.__class__.__name__}: 未配置Cookie，使用官方API")
+
+            proxy = self.config.proxy if self.config.proxy else None
+
+            self._client = httpx.AsyncClient(
+                headers=headers,
+                proxy=proxy,
+                timeout=self.config.timeout,
+                follow_redirects=True,
+            )
+            logger.info(f"{self.__class__.__name__}: HTTP 客户端已初始化")
+
     async def fetch_hot_data(self) -> list[dict]:
         """
-        从备选API抓取B站热门数据
+        从B站官方API抓取热门数据
 
         Returns:
             list[dict]: 热门数据列表
         """
         logger.info("抓取B站热门数据...")
 
-        for i, api_url in enumerate(self.API_ENDPOINTS, 1):
-            try:
-                logger.debug(f"尝试API源 {i}/{len(self.API_ENDPOINTS)}: {api_url}")
-                response = await self.get(api_url)
-                data = response.json()
+        try:
+            params = {"ps": self.config.trending_ps}
+            response = await self.get(self.config.trending_url, params=params)
+            data = response.json()
 
-                items = self._parse_api_response(data, api_url)
-                if items:
-                    logger.info(f"从 API源{i} 获取 {len(items)} 条数据")
-                    return items
-
-            except Exception as e:
-                logger.debug(f"API源{i} 失败: {e}")
-                continue
-
-        logger.error("所有API源均失败")
-        return []
-
-    def _parse_api_response(self, data: dict, api_url: str) -> list[dict]:
-        """解析API响应"""
-        # vvhan API格式
-        if "vvhan" in api_url:
-            if data.get("success"):
-                return data.get("data", [])
-
-        # api0v API格式
-        if "api0v" in api_url:
-            if data.get("code") == 200:
-                return data.get("data", {}).get("data", [])
-
-        # go-old API格式
-        if "go-old" in api_url:
             if data.get("code") == 0:
-                return data.get("data", [])
+                items = data.get("data", {}).get("list", [])
+                logger.info(f"获取B站热门 {len(items)} 条")
+                return items
+            else:
+                logger.warning(f"B站API返回错误: {data.get('message', 'Unknown error')}")
+                return []
 
-        return data.get("data", data.get("list", []))
+        except Exception as e:
+            logger.error(f"抓取B站数据失败: {e}")
+            return []
 
     def _parse_hot_item(self, raw_item: dict) -> Optional[CrawlItem]:
         """解析热门条目"""
         try:
-            title = raw_item.get("title", raw_item.get("name", ""))
-            url = raw_item.get("url", raw_item.get("link", raw_item.get("mobileUrl", "")))
+            title = raw_item.get("title", "")
+            # 构建视频URL
+            bvid = raw_item.get("bvid", "")
+            url = f"https://www.bilibili.com/video/{bvid}" if bvid else raw_item.get("uri", "")
 
-            # 热度/播放量
-            hot_value = raw_item.get(
-                "hot",
-                raw_item.get("hotValue", raw_item.get("score", raw_item.get("play", 0)))
-            )
-            if isinstance(hot_value, str):
-                hot_value = hot_value.replace("万", "0000").replace(",", "").strip()
-                match = re.search(r"([\d.]+)", hot_value)
-                if match:
-                    hot_value = int(float(match.group(1)))
-                else:
-                    hot_value = 0
+            # 播放量/热度
+            stat = raw_item.get("stat", {})
+            # 使用观看人数或播放数作为热度
+            hot_value = stat.get("view", stat.get("played", 0))
 
             # 作者/UP主
-            author = raw_item.get("author", raw_item.get("owner", raw_item.get("up", "")))
+            owner = raw_item.get("owner", {})
+            author = owner.get("name", "") if isinstance(owner, dict) else ""
 
-            # 摘要
-            content = raw_item.get("desc", raw_item.get("summary", raw_item.get("description", "")))
-
-            # 排名
-            ranking = raw_item.get("rank", raw_item.get("index", 0))
+            # 简介
+            content = raw_item.get("desc", "")
 
             # 封面
-            cover = raw_item.get("cover", raw_item.get("pic", ""))
+            cover = raw_item.get("pic", "")
 
             return CrawlItem(
                 platform="bilibili",
@@ -115,10 +110,10 @@ class BilibiliCrawler(BaseCrawler):
                 content=content,
                 url=url,
                 score=int(hot_value),
-                comment_count=0,
+                comment_count=stat.get("review", 0),
                 author=author,
                 created_at=datetime.now(),
-                raw_data={"ranking": ranking, "cover": cover, **raw_item},
+                raw_data={"bvid": bvid, "cover": cover, "stat": stat, **raw_item},
             )
         except Exception as e:
             logger.warning(f"解析条目失败: {e}")

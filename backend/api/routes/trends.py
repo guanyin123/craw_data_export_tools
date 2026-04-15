@@ -3,6 +3,7 @@
 
 提供趋势分析相关的 API 接口
 """
+import logging
 from typing import Optional
 from datetime import date, datetime, timedelta
 
@@ -15,6 +16,7 @@ from analyzer.trend_analyzer import TrendAnalyzer
 from api.schemas import TrendResponse, RisingKeyword
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 创建趋势分析器实例
 trend_analyzer = TrendAnalyzer()
@@ -95,8 +97,12 @@ async def get_rising_keywords(
 
     对比最近两个周期，找出增长最快的关键词
     """
-    rising = trend_analyzer.get_rising_keywords(db, days=days, limit=limit)
-    return rising
+    try:
+        rising = trend_analyzer.get_rising_keywords(db, days=days, limit=limit)
+        return rising
+    except Exception as e:
+        logger.error(f"获取上升趋势关键词失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取上升趋势关键词失败: {str(e)}")
 
 
 @router.get("/hot")
