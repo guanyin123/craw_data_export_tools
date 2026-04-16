@@ -23,6 +23,8 @@ class Item(Base):
     url: Mapped[str] = mapped_column(String(1000), nullable=False)
     score: Mapped[int] = mapped_column(Integer, nullable=False)  # 点赞数
     comment_count: Mapped[int] = mapped_column(Integer, default=0)
+    comment_summary: Mapped[str | None] = mapped_column(Text, nullable=True)  # 评论摘要（汇总前10条高赞评论）
+    top_comment_score: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 最高赞评论点赞数
     author: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     crawled_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
