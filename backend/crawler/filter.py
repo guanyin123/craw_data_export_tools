@@ -49,7 +49,7 @@ class ContentFilter:
                 for line in f:
                     word = line.strip()
                     if word and not word.startswith("#"):
-                        keywords.add(word)
+                        keywords.add(word.lower())  # Convert to lowercase
         return keywords
 
     def has_business_value(self, title: str, content: str = "") -> bool:
