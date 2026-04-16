@@ -226,6 +226,94 @@ class Tokenizer:
 
         return filtered_tags
 
+    def cut_with_pos(
+        self,
+        text: str,
+        allowed_pos: Set[str] | None = None,
+        min_length: int = 2
+    ) -> List[tuple[str, str]]:
+        """
+        带词性标注的分词
+
+        Args:
+            text: 待分词文本
+            allowed_pos: 允许的词性集合，默认为名词、动词、形容词
+            min_length: 最小词长度
+
+        Returns:
+            list[tuple[str, str]]: (词, 词性) 列表
+
+        词性说明:
+            n: 名词, nr: 人名, ns: 地名, nt: 机构名
+            v: 动词, vn: 动名词
+            a: 形容词, an: 名形词
+            m: 数量词
+        """
+        if not text:
+            return []
+
+        # 默认只保留名词、动名词、动词、形容词
+        if allowed_pos is None:
+            allowed_pos = {"n", "nr", "ns", "nt", "vn", "a", "an"}
+
+        import jieba.posseg as pseg
+
+        words = []
+        for word, pos in pseg.cut(text):
+            word = word.strip()
+
+            # 检查长度
+            if len(word) < min_length:
+                continue
+
+            # 检查词性
+            if pos not in allowed_pos:
+                continue
+
+            # 过滤停用词
+            if not self.is_meaningful(word):
+                continue
+
+            words.append((word, pos))
+
+        return words
+
+    def extract_meaningful_phrases(
+        self,
+        text: str,
+        max_length: int = 4
+    ) -> List[str]:
+        """
+        提取有意义的短语
+
+        Args:
+            text: 待分析文本
+            max_length: 短语最大长度
+
+        Returns:
+            list[str]: 有意义的短语列表
+        """
+        # 获取带词性的分词结果
+        words_with_pos = self.cut_with_pos(text)
+
+        phrases = []
+        current_phrase = []
+
+        for word, pos in words_with_pos:
+            current_phrase.append(word)
+
+            # 名词+动词/形容词 组合形成短语
+            if len(current_phrase) >= 2 and pos in {"n", "nr", "ns", "nt", "vn"}:
+                phrase = "".join(current_phrase[-max_length:])
+                if len(phrase) >= 2:
+                    phrases.append(phrase)
+
+            # 重置短语（遇到新的名词）
+            if pos in {"n", "nr", "ns", "nt"}:
+                current_phrase = [word]
+
+        return list(set(phrases))  # 去重
+
 
 # 默认分词器实例
 default_tokenizer = Tokenizer()
