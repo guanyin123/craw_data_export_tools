@@ -5,7 +5,6 @@
 """
 import logging
 import re
-from typing import List, Tuple
 
 from .tokenizer import default_tokenizer
 
@@ -19,29 +18,10 @@ class PhraseExtractor:
     提取2-4字的有意义短语，过滤无意义的单字词
     """
 
-    # 有价值的短语模式
-    VALUABLE_PATTERNS = [
-        # 工具/产品类
-        r"Chrome扩展",
-        r"VSCode插件",
-        r"Excel.*",
-        r"Python.*",
-        r"AI.*",
-        # 商业类
-        r".*副业",
-        r".*创业",
-        r".*变现",
-        r".*获客",
-        # 技能类
-        r".*开发",
-        r".*设计",
-        r".*运营",
-    ]
-
     def __init__(self):
         self.tokenizer = default_tokenizer
 
-    def extract_from_title(self, title: str) -> List[str]:
+    def extract_from_title(self, title: str) -> list[str]:
         """
         从标题中提取有价值短语
 
@@ -77,8 +57,9 @@ class PhraseExtractor:
         for phrase in phrases:
             phrase = phrase.strip()
             if 2 <= len(phrase) <= 6 and phrase not in seen:
-                # 过滤纯数字、符号 - 保留包含中文的短语
-                if any('\u4e00' <= c <= '\u9fff' for c in phrase):
+                # Allow Chinese OR English/Alphanumeric phrases
+                if (any('\u4e00' <= c <= '\u9fff' for c in phrase) or
+                    (phrase.isascii() and phrase.isalnum())):
                     unique_phrases.append(phrase)
                     seen.add(phrase)
 
@@ -88,7 +69,7 @@ class PhraseExtractor:
         self,
         content: str,
         top_k: int = 20
-    ) -> List[Tuple[str, int]]:
+    ) -> list[tuple[str, int]]:
         """
         从内容中提取高频短语
 
