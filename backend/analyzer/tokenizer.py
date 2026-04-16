@@ -249,12 +249,13 @@ class Tokenizer:
             a: 形容词, an: 名形词
             m: 数量词
         """
-        if not text:
+        if not text or not text.strip():
             return []
 
-        # 默认只保留名词、动名词、动词、形容词
+        # 默认只保留名词、动名词、动词、形容词、英文词
+        # Add 'eng' for English words common in tech/business contexts
         if allowed_pos is None:
-            allowed_pos = {"n", "nr", "ns", "nt", "vn", "a", "an"}
+            allowed_pos = {"n", "nr", "ns", "nt", "vn", "a", "an", "eng"}
 
         import jieba.posseg as pseg
 
@@ -293,24 +294,29 @@ class Tokenizer:
         Returns:
             list[str]: 有意义的短语列表
         """
-        # 获取带词性的分词结果
-        words_with_pos = self.cut_with_pos(text)
+        if not text or not text.strip():
+            return []
 
+        # 使用jieba的TF-IDF提取关键词，这些天然是有意义的短语
+        tags = self.extract_tags(text, top_k=20, with_weight=True)
+
+        # 过滤出合适长度的短语
         phrases = []
-        current_phrase = []
+        for word, weight in tags:
+            if 2 <= len(word) <= max_length * 2:  # 允许中文短语
+                phrases.append(word)
 
+        # 也使用词性标注提取一些组合
+        words_with_pos = self.cut_with_pos(text, allowed_pos={"n", "nr", "ns", "nt", "vn", "eng"})
+
+        # 简单组合：连续的名词/英文词
+        current_phrase = ""
         for word, pos in words_with_pos:
-            current_phrase.append(word)
-
-            # 名词+动词/形容词 组合形成短语
-            if len(current_phrase) >= 2 and pos in {"n", "nr", "ns", "nt", "vn"}:
-                phrase = "".join(current_phrase[-max_length:])
-                if len(phrase) >= 2:
-                    phrases.append(phrase)
-
-            # 重置短语（遇到新的名词）
+            current_phrase += word
+            if len(current_phrase) >= 2 and len(current_phrase) <= max_length * 2:
+                phrases.append(current_phrase)
             if pos in {"n", "nr", "ns", "nt"}:
-                current_phrase = [word]
+                current_phrase = word  # 重置为当前词，可能开始新短语
 
         return list(set(phrases))  # 去重
 
