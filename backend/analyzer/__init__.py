@@ -3,7 +3,7 @@
 """
 from .tokenizer import Tokenizer, default_tokenizer
 from .keyword_counter import KeywordCounter, default_keyword_counter
-from .classifier import Classifier, Category, default_classifier
+from .classifier import SmartClassifier as Classifier, Category, default_classifier
 from .trend_analyzer import TrendAnalyzer, default_trend_analyzer
 from .phrase_extractor import PhraseExtractor, default_phrase_extractor
 

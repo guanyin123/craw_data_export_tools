@@ -10,6 +10,7 @@ from typing import Optional
 
 from .base import BaseCrawler, CrawlItem
 from .config import ZhihuConfig
+from .filter import default_filter as content_filter
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,71 @@ class ZhihuCrawler(BaseCrawler):
 
         return data["data"]
 
-    def _parse_hot_item(self, raw_item: dict) -> CrawlItem:
+    async def fetch_comments(self, question_id: str, limit: int = 10) -> list[dict]:
+        """
+        抓取指定问题的评论
+
+        Args:
+            question_id: 问题ID
+            limit: 最多抓取评论数
+
+        Returns:
+            list[dict]: 评论列表
+        """
+        logger.debug(f"抓取问题评论: question_id={question_id}")
+
+        url = f"https://www.zhihu.com/api/v4/questions/{question_id}/comments"
+        params = {
+            "limit": limit,
+            "order": "vote",
+            "include": "content,voteup_count,author"
+        }
+
+        try:
+            response = await self.get(url, params=params)
+            data = response.json()
+
+            if data.get("data") is None:
+                logger.debug(f"评论响应异常: {data}")
+                return []
+
+            comments = data["data"]
+            logger.debug(f"获取 {len(comments)} 条评论")
+            return comments
+        except Exception as e:
+            logger.warning(f"抓取评论失败: {e}")
+            return []
+
+    def _build_comment_summary(self, comments: list[dict], max_length: int = 500) -> str:
+        """
+        构建评论摘要
+
+        Args:
+            comments: 评论列表
+            max_length: 摘要最大长度
+
+        Returns:
+            str: 评论摘要
+        """
+        if not comments:
+            return ""
+
+        import re
+        summary_parts = []
+        total_length = 0
+
+        for comment in comments:
+            content = comment.get("content", "")
+            content = re.sub(r"<[^>]+>", "", content).strip()
+            if content:
+                summary_parts.append(content)
+                total_length += len(content)
+                if total_length >= max_length:
+                    break
+
+        return " | ".join(summary_parts)
+
+    def _parse_hot_item(self, raw_item: dict) -> CrawlItem | None:
         """
         解析热榜条目
 
@@ -129,10 +194,18 @@ class ZhihuCrawler(BaseCrawler):
         question_id = str(target.get("id", ""))
         url = target.get("url", f"https://www.zhihu.com/question/{question_id}")
 
+        # 过滤无商业价值的内容
+        if not content_filter.has_business_value(title, ""):
+            logger.debug(f"过滤无价值内容: {title}")
+            return None  # type: ignore
+
         # 热度值 (知乎使用格式化的热度字符串，如 "1.2 万热度")
-        hot_value_str = raw_item.get("detail_text", "").replace("热度", "").replace("万", "0000").strip()
+        hot_value_str = raw_item.get("detail_text", "").replace("热度", "").strip()
         try:
-            score = int(float(hot_value_str) if hot_value_str else 0)
+            if "万" in hot_value_str:
+                score = int(float(hot_value_str.replace("万", "").strip()) * 10000)
+            else:
+                score = int(float(hot_value_str) if hot_value_str else 0)
         except ValueError:
             score = 0
 
@@ -210,6 +283,22 @@ class ZhihuCrawler(BaseCrawler):
             if isinstance(answer_author, dict):
                 item.author = answer_author.get("name", item.author)
 
+            # 抓取评论
+            comments = await self.fetch_comments(question_id, limit=10)
+            if comments:
+                comment_summary = self._build_comment_summary(comments)
+                if comment_summary:
+                    if item.content:
+                        item.content = f"{item.content}\n\n[评论摘要] {comment_summary}"
+                    else:
+                        item.content = f"[评论摘要] {comment_summary}"
+
+                    top_comment_score = max(
+                        (c.get("voteup_count", 0) for c in comments),
+                        default=0
+                    )
+                    item.raw_data["top_comment_score"] = top_comment_score
+
             logger.debug(f"补充回答内容: {item.title[:30]}...")
         except Exception as e:
             logger.warning(f"补充内容失败: {e}")
@@ -236,6 +325,8 @@ class ZhihuCrawler(BaseCrawler):
         for raw_item in hot_list[:max_items]:
             try:
                 item = self._parse_hot_item(raw_item)
+                if item is None:
+                    continue
                 items.append(item)
             except Exception as e:
                 logger.warning(f"解析热榜条目失败: {e}")

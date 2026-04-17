@@ -10,6 +10,7 @@ import re
 
 from .base import BaseCrawler, CrawlItem
 from .config import BilibiliConfig
+from .filter import default_filter as content_filter
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,12 @@ class BilibiliCrawler(BaseCrawler):
         """解析热门条目"""
         try:
             title = raw_item.get("title", "")
+
+            # 过滤无商业价值的内容
+            if not content_filter.has_business_value(title, ""):
+                logger.debug(f"过滤无价值内容: {title}")
+                return None
+
             # 构建视频URL
             bvid = raw_item.get("bvid", "")
             url = f"https://www.bilibili.com/video/{bvid}" if bvid else raw_item.get("uri", "")
@@ -119,6 +126,84 @@ class BilibiliCrawler(BaseCrawler):
             logger.warning(f"解析条目失败: {e}")
             return None
 
+    async def fetch_comments(self, bvid: str, limit: int = 10) -> list[dict]:
+        """
+        抓取指定视频的评论
+
+        Args:
+            bvid: 视频BV号
+            limit: 最多抓取评论数
+
+        Returns:
+            list[dict]: 评论列表
+        """
+        logger.debug(f"抓取视频评论: bvid={bvid}")
+
+        # 先获取视频的 cid（用作 oid）
+        oid_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
+        comment_url = "https://api.bilibili.com/x/v2/reply"
+
+        try:
+            resp = await self.get(oid_url)
+            data = resp.json()
+
+            if data.get("code") != 0:
+                logger.debug(f"获取视频信息失败: {data}")
+                return []
+
+            oid = data["data"]["cid"]
+
+            params = {
+                "type": 1,
+                "oid": oid,
+                "pn": 1,
+                "ps": limit,
+                "sort": 2  # 按点赞排序
+            }
+
+            response = await self.get(comment_url, params=params)
+            comment_data = response.json()
+
+            if comment_data.get("code") == 0:
+                replies = comment_data.get("data", {}).get("replies", [])
+                logger.debug(f"获取 {len(replies)} 条评论")
+                return replies
+            else:
+                logger.debug(f"评论API错误: {comment_data}")
+                return []
+        except Exception as e:
+            logger.warning(f"抓取评论失败: {e}")
+            return []
+
+    def _build_comment_summary(self, comments: list[dict], max_length: int = 500) -> str:
+        """
+        构建评论摘要
+
+        Args:
+            comments: 评论列表
+            max_length: 摘要最大长度
+
+        Returns:
+            str: 评论摘要
+        """
+        if not comments:
+            return ""
+
+        summary_parts = []
+        total_length = 0
+
+        for comment in comments:
+            member = comment.get("member", {})
+            content = comment.get("content", {}).get("message", "")
+            if content:
+                author = member.get("uname", "网友")
+                summary_parts.append(f"{author}: {content}")
+                total_length += len(content)
+                if total_length >= max_length:
+                    break
+
+        return " | ".join(summary_parts)
+
     async def fetch_items(self, limit: Optional[int] = None) -> list[CrawlItem]:
         """抓取B站热门数据"""
         max_items = limit or self.config.max_items_per_run
@@ -133,6 +218,28 @@ class BilibiliCrawler(BaseCrawler):
         for raw_item in hot_list[:max_items]:
             item = self._parse_hot_item(raw_item)
             if item and item.title:
+                # 抓取评论
+                bvid = raw_item.get("bvid", "")
+                if bvid:
+                    try:
+                        comments = await self.fetch_comments(bvid, limit=10)
+                        if comments:
+                            comment_summary = self._build_comment_summary(comments)
+                            if comment_summary:
+                                if item.content:
+                                    item.content = f"{item.content}\n\n[评论摘要] {comment_summary}"
+                                else:
+                                    item.content = f"[评论摘要] {comment_summary}"
+                                top_score = max(
+                                    (c.get("like", 0) for c in comments),
+                                    default=0
+                                )
+                                if item.raw_data is None:
+                                    item.raw_data = {}
+                                item.raw_data["top_comment_score"] = top_score
+                    except Exception as e:
+                        logger.warning(f"抓取评论失败: {e}")
+
                 items.append(item)
 
         crawled_at = datetime.now()

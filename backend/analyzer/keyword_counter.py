@@ -11,6 +11,7 @@ from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 
 from .tokenizer import Tokenizer, default_tokenizer
+from .phrase_extractor import default_phrase_extractor
 from models.models import Item, Keyword, KeywordItem
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class KeywordCounter:
             tokenizer: 分词器，默认使用 default_tokenizer
         """
         self.tokenizer = tokenizer or default_tokenizer
+        self.phrase_extractor = default_phrase_extractor
 
     def extract_keywords_from_item(
         self,
@@ -52,23 +54,42 @@ class KeywordCounter:
         Returns:
             List[tuple[str, int]]: (关键词, 权重) 列表
         """
-        # 合并标题和内容
-        text = f"{item.title} {item.content or ''}"
-
-        if not text.strip():
+        if not item.title and not item.content:
             return []
 
-        # 使用 TF-IDF 提取关键词
-        keywords = self.tokenizer.extract_tags(text, top_k=top_k, with_weight=True)
-
-        # 转换权重为整数（保留1位小数后乘10）
         result = []
-        for word, weight in keywords:
-            if len(word) >= min_length:
-                score = int(weight * 10)
-                result.append((word, score))
 
-        return result
+        # 方法1: 从标题提取短语
+        title_phrases = default_phrase_extractor.extract_from_title(item.title or "")
+        for phrase in title_phrases:
+            if len(phrase) >= min_length:
+                result.append((phrase, 5))  # 标题短语权重较高
+
+        # 方法2: 从内容提取短语
+        if item.content:
+            content_phrases = default_phrase_extractor.extract_from_content(item.content, top_k=top_k)
+            for phrase, weight in content_phrases:
+                if len(phrase) >= min_length:
+                    result.append((phrase, weight))
+
+        # 方法3: 传统 TF-IDF 提取（补充）
+        text = f"{item.title or ''} {item.content or ''}"
+        if text.strip():
+            keywords = self.tokenizer.extract_tags(text, top_k=top_k, with_weight=True)
+            for word, weight in keywords:
+                if len(word) >= min_length:
+                    score = int(weight * 10)
+                    result.append((word, score))
+
+        # 去重，保留最高权重
+        seen = {}
+        for word, score in result:
+            if word not in seen or score > seen[word]:
+                seen[word] = score
+
+        # 按权重排序
+        sorted_results = sorted(seen.items(), key=lambda x: x[1], reverse=True)
+        return sorted_results[:top_k]
 
     def count_from_items(
         self,
@@ -99,6 +120,12 @@ class KeywordCounter:
         self._update_keywords(word_count, item_keywords, db)
 
         return dict(word_count)
+
+    def _classify_keyword(self, word: str) -> str | None:
+        """使用智能分类器分类关键词"""
+        from .classifier import default_classifier
+        category = default_classifier.classify(word)
+        return category.value if category.value != "OTHER" else None
 
     def _update_keywords(
         self,
@@ -132,6 +159,7 @@ class KeywordCounter:
                 keyword = Keyword(
                     word=word,
                     count=count,
+                    category=self._classify_keyword(word),
                     first_seen=now,
                     last_seen=now
                 )
